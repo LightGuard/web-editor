@@ -11,12 +11,11 @@ require 'logger'
 module AwestructWebEditor
   class Repository
 
-    attr_reader :name, :uri
+    attr_reader :name
     attr_accessor :relative_path
 
     def initialize(content = [])
       @name = content['name'] || content[:name] || ''
-      @uri = content['uri'] || content[:uri] || ''
       @relative_path = content['relative_path'] || content[:relative_path] || nil
 
       log_file = File.new(File.join((ENV['OPENSHIFT_RUBY_LOG_DIR'] || 'log'), 'application.log' ), 'a+')
@@ -67,7 +66,7 @@ CONFIG
       github = create_github_client
       begin
         @logger.info 'creating github fork'
-        fork_response = github.fork(URI(@settings['repo']).path[1..-1])
+        fork_response = github.fork(@settings['repo'])
       rescue Exception => e
         return [500, e.message]
       end
@@ -80,7 +79,7 @@ CONFIG
         git.add_remote('upstream', fork_response.parent.clone_url)
 
         @logger.debug 'pulling from git'
-        Open3.popen3("git pull upstream master") do |_, _, stderr, wait_thr|
+        Open3.popen3('git pull upstream master') do |_, _, stderr, wait_thr|
           exit_value = wait_thr.value
           @logger.debug "pull exit status: #{exit_value}"
           error = stderr.readlines.join "\n"
@@ -163,8 +162,7 @@ CONFIG
 
     def fetch_remote(remote = 'upstream')
       @logger.info "Fetching remote #{remote}"
-      Open3.popen3("git fetch #{remote}",
-                   :chdir => File.absolute_path(base_repository_path)) do |_, _, stderr, wait_thr|
+      Open3.popen3("git fetch #{remote}", :chdir => File.absolute_path(base_repository_path)) do |_, _, stderr, wait_thr|
         exit_value = wait_thr.value
         @logger.debug "fetch exit status: #{exit_value}"
         error = stderr.readlines.join "\n"
@@ -173,7 +171,7 @@ CONFIG
     end
 
     def create_branch(branch_name)
-      upstream_repo = create_github_client.repository(Octokit::Repository.from_url @settings['repo'])
+      upstream_repo = create_github_client.repository(Octokit::Repository.new @settings['repo'])
       fetch_remote
       @logger.info "creating branch #{branch_name} based on 'upstream/#{upstream_repo.master_branch}'"
       system("git checkout -b #{branch_name} upstream/#{upstream_repo.master_branch}")
@@ -181,7 +179,7 @@ CONFIG
 
     def rebase(overwrite, remote = 'upstream')
       fetch_remote remote
-      upstream_repo = create_github_client.repository(Octokit::Repository.from_url @settings['repo'])
+      upstream_repo = create_github_client.repository(Octokit::Repository.new @settings['repo'])
       Dir.chdir(File.join @base_repo_dir) do
         if overwrite
           @logger.debug 'overwriting our files during the rebase'
@@ -216,7 +214,7 @@ CONFIG
 
     def pull_request(title, body)
       github = create_github_client
-      upstream_repo = Octokit::Repository.from_url @settings['repo']
+      upstream_repo = Octokit::Repository.new @settings['repo']
       upstream_response = github.repository(upstream_repo)
       @logger.info "Issuing a pull request with title - #{title} and body #{body}"
       pull_request_result = github.create_pull_request(upstream_repo,
